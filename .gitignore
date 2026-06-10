@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.venv/
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data and generated artifacts
+datasets/
+checkpoints/*.pkl
+checkpoints/*.pth
+checkpoints/*.pt
+checkpoints/*.ckpt
+train_logs/
+train_logs0/
+good_weight/
+result/
+results/
+feature_vis/
+compare_results/
+3d_surface_visual_image/
+mask_256/
+*.mat
+*.log
+
+# Manuscript and private notes
+paper/
+plan.md
+审稿意见.txt
+command.txt
