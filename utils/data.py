@@ -165,7 +165,7 @@ class NUDTDataset(Data.Dataset):
     
 
 class SirstDataset(Data.Dataset):
-    def __init__(self, base_dir=r'/opt/data/private/xzh/RPCANet-main/datasets/SIRSTdevkit',
+    def __init__(self, base_dir=r'datasets/SIRSTv1',
                  mode='train', base_size=256):
         if mode == 'train':
             txtfile = 'trainval_v1.txt'

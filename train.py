@@ -25,7 +25,7 @@ def parse_args():
     #
     # Setting parameters
     #
-    parser = ArgumentParser(description='Implement of RPCANet')
+    parser = ArgumentParser(description='Implementation of SCDE-Net')
 
     #
     # Dataset parameters
@@ -56,8 +56,8 @@ def parse_args():
     #
     # Net parameters
     #
-    parser.add_argument('--net-name', type=str, default='rpcanet',
-                        help='net name: fcn')
+    parser.add_argument('--net-name', type=str, default='scdenet',
+                        help='network name: scdenet')
     # Rank parameters
     #
     # parser.add_argument('--rank', type=int, default=8,
@@ -106,7 +106,7 @@ def backup_model_files(save_folder):
     
     # 需要备份的文件列表
     files_to_backup = [
-        'models/DRPCANet.py',
+        'models/SCDENet.py',
         'models/__init__.py', 
         'train.py',
         'utils/loss.py',
@@ -161,7 +161,7 @@ def backup_model_files(save_folder):
             else:
                 f.write(f"  ✗ {file_path} (文件不存在)\n")
         f.write(f"\n备份说明:\n")
-        f.write(f"- DRPCANet.py: 主要模型架构文件\n")
+        f.write(f"- SCDENet.py: 主要模型架构文件\n")
         f.write(f"- __init__.py: 模型初始化文件\n") 
         f.write(f"- train.py: 训练脚本\n")
         f.write(f"- loss.py: 损失函数定义\n")

@@ -53,19 +53,19 @@ Large datasets, checkpoints, generated results, logs, and visualization outputs 
 Train on IRSTD-1K:
 
 ```bash
-python train.py --net-name Drpcanet --dataset irstd1k --batch-size 8 --epoch 400 --lr 1e-4 --base-dir train_logs
+python train.py --net-name scdenet --dataset irstd1k --batch-size 8 --epoch 400 --lr 1e-4 --base-dir train_logs
 ```
 
 Train on NUDT-SIRST:
 
 ```bash
-python train.py --net-name Drpcanet --dataset nudt --batch-size 8 --epoch 400 --lr 1e-4 --base-dir train_logs
+python train.py --net-name scdenet --dataset nudt --batch-size 8 --epoch 400 --lr 1e-4 --base-dir train_logs
 ```
 
 Train on SIRST V1:
 
 ```bash
-python train.py --net-name Drpcanet --dataset SIRSTv1 --batch-size 8 --epoch 400 --lr 1e-4 --base-dir train_logs
+python train.py --net-name scdenet --dataset SIRSTv1 --batch-size 8 --epoch 400 --lr 1e-4 --base-dir train_logs
 ```
 
 ## Inference
@@ -93,16 +93,6 @@ python visualize_stage_target_response.py \
   --model-variant current
 ```
 
-For original DRPCA-Net baseline checkpoints, use:
-
-```bash
-python visualize_stage_target_response.py \
-  --dataset IRSTD-1k \
-  --image XDU0.png \
-  --checkpoint checkpoints/DRPCANet_IRSTD1K.pkl \
-  --model-variant baseline
-```
-
 ## Citation
 
 If this code is useful for your research, please cite the corresponding paper after publication.
@@ -113,4 +103,4 @@ No license file has been added yet. Please add an appropriate open-source licens
 
 ## Acknowledgements
 
-This implementation is developed based on the public DRPCA-Net codebase. We thank the authors for their valuable open-source contribution.
+This implementation is released as the official PyTorch code for SCDE-Net.

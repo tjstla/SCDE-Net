@@ -74,7 +74,7 @@ def main():
     checkpoint = args.checkpoint or DEFAULT_CHECKPOINTS[dataset]
     device = torch.device(args.device)
 
-    model = get_model("Drpcanet")
+    model = get_model("scdenet")
     model = load_checkpoint(model, checkpoint, device)
     model.to(device)
     model.eval()

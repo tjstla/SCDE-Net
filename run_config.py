@@ -9,4 +9,4 @@ data_nudt = ' --dataset nudt '
 SirstDataset = ' --dataset SIRSTv1 '
 
 for i in range(1):
-    os.system('python train.py --net-name Drpcanet --batch-size 8 --base-dir train_logs' + train_cfg + data_irstd1k + gpu)
+    os.system('python train.py --net-name scdenet --batch-size 8 --base-dir train_logs' + train_cfg + data_irstd1k + gpu)

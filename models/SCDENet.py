@@ -4,7 +4,7 @@ import math
 import torch.nn.functional as F
 import numpy as np
 
-__all__ = ["DRPCANet"]
+__all__ = ["SCDENet"]
 
 
 class StripPoolingBlock(nn.Module):
@@ -143,12 +143,12 @@ class parametergenerator(nn.Module):
         return self.generator(x)
 
 
-# --- 其他类保持不变 (DRPCANet, DynamicSparseModule 等) ---
-class DRPCANet(nn.Module):
+# --- SCDE-Net 主体网络 ---
+class SCDENet(nn.Module):
     def __init__(
         self, stage_num=6, slayers=6, llayers=3, mlayers=5, channel=32, mode="train"
     ):
-        super(DRPCANet, self).__init__()
+        super(SCDENet, self).__init__()
         self.stage_num = stage_num
         self.decos = nn.ModuleList()
         self.mode = mode
