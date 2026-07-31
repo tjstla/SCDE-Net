@@ -61,7 +61,7 @@ def resolve_file_list(data_root, dataset):
 
 
 def load_checkpoint(model, checkpoint, device):
-    state = torch.load(checkpoint, map_location=device)
+    state = torch.load(checkpoint, map_location=device, weights_only=True)
     if isinstance(state, dict) and "state_dict" in state:
         state = state["state_dict"]
     model.load_state_dict(state)
