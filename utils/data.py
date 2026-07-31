@@ -1,168 +1,97 @@
 import torch
-import torch.nn as nn
 import torch.utils.data as Data
-import torchvision.transforms as transforms
 
-from PIL import Image, ImageOps, ImageFilter
 import cv2
 import os
 import os.path as osp
-import sys
 import random
-import scipy.io as scio
 import numpy as np
 
-__all__ = ['SirstAugDataset', 'IRSTD1kDataset', 'NUDTDataset', 'SirstDataset']
+__all__ = ['SirstAugDataset', 'IRSTD1kDataset', 'NUDTDataset', 'SirstDataset',
+           'read_gray_pair', 'resize_pair', 'to_tensor_pair', 'list_png_names',
+           'augumentation', 'PadImg', 'random_crop']
 
-class SirstAugDataset(Data.Dataset):
+
+def list_png_names(directory):
+    return [name for name in os.listdir(directory) if name.endswith('png')]
+
+
+def read_gray_pair(img_path, mask_path):
+    img, mask = cv2.imread(img_path, 0), cv2.imread(mask_path, 0)
+    if img is None:
+        raise FileNotFoundError(f"Cannot read image: {img_path}")
+    if mask is None:
+        raise FileNotFoundError(f"Cannot read mask: {mask_path}")
+    return img, mask
+
+
+def resize_pair(img, mask, base_size):
+    img = cv2.resize(img, (base_size, base_size), interpolation=cv2.INTER_LINEAR)
+    mask = cv2.resize(mask, (base_size, base_size), interpolation=cv2.INTER_NEAREST)
+    return img, mask
+
+
+def to_tensor_pair(img, mask, base_size, pad=False):
+    """Scale to [0, 1], reshape to (1, base_size, base_size) and convert to float tensors."""
+    img = img.reshape(1, base_size, base_size) / 255.
+    mask = mask.reshape(1, base_size, base_size)
+    mask_max = np.max(mask)
+    if mask_max > 0:
+        mask = mask / mask_max
+    if pad:
+        img, mask = PadImg(img), PadImg(mask)
+    img = torch.from_numpy(img).type(torch.FloatTensor)
+    mask = torch.from_numpy(mask).type(torch.FloatTensor)
+    return img, mask
+
+
+class PairedFolderDataset(Data.Dataset):
     '''
+    Dataset for `<base_dir>/{trainval,test}/{images,masks}` layouts.
+
     Return: Single channel
     '''
+
+    def __init__(self, base_dir, mode='train', base_size=256, resize=False, augment=False):
+        assert mode in ['train', 'test']
+        self.mode = mode
+        self.data_dir = osp.join(base_dir, 'trainval' if mode == 'train' else 'test')
+        self.base_size = base_size
+        self.resize = resize
+        self.names = list_png_names(osp.join(self.data_dir, 'images'))
+        self.tranform = augumentation() if augment else None
+
+    def __getitem__(self, i):
+        name = self.names[i]
+        img, mask = read_gray_pair(osp.join(self.data_dir, 'images', name),
+                                   osp.join(self.data_dir, 'masks', name))
+        if self.mode == 'train' and self.tranform is not None:
+            img, mask = self.tranform(img, mask)
+        if self.resize:
+            img, mask = resize_pair(img, mask, self.base_size)
+        return to_tensor_pair(img, mask, self.base_size)
+
+    def __len__(self):
+        return len(self.names)
+
+
+class SirstAugDataset(PairedFolderDataset):
     def __init__(self, base_dir=r'/Users/tianfangzhang/Program/DATASETS/sirst_aug',
                  mode='train', base_size=256):
-        assert mode in ['train', 'test']
-        self.mode = mode
-        if mode == 'train':
-            self.data_dir = osp.join(base_dir, 'trainval')
-        elif mode == 'test':
-            self.data_dir = osp.join(base_dir, 'test')
-        else:
-            raise NotImplementedError
+        super().__init__(base_dir, mode=mode, base_size=base_size, resize=False, augment=True)
 
-        self.base_size = base_size
 
-        self.names = []
-        for filename in os.listdir(osp.join(self.data_dir, 'images')):
-            if filename.endswith('png'):
-                self.names.append(filename)
-        self.tranform = augumentation()
-        # self.transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),  # Default mean and std
-        # ])
-
-    def __getitem__(self, i):
-        name = self.names[i]
-        img_path = osp.join(self.data_dir, 'images', name)
-        label_path = osp.join(self.data_dir, 'masks', name)
-
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
-        if self.mode == 'train':
-            img, mask = self.tranform(img, mask)
-        img = img.reshape(1, self.base_size, self.base_size) / 255.
-        if np.max(mask) > 0:
-            mask = mask.reshape(1, self.base_size, self.base_size) / np.max(mask)
-        else:
-            mask = mask.reshape(1, self.base_size, self.base_size)
-        img = torch.from_numpy(img).type(torch.FloatTensor)
-        mask = torch.from_numpy(mask).type(torch.FloatTensor)
-        return img, mask
-
-    def __len__(self):
-        return len(self.names)
-
-class IRSTD1kDataset(Data.Dataset):
-    '''
-    Return: Single channel
-    '''
-
+class IRSTD1kDataset(PairedFolderDataset):
     def __init__(self, base_dir=r'D:/WFY/datasets/IRSTD-1k',
                  mode='train', base_size=256):
-        assert mode in ['train', 'test']
+        super().__init__(base_dir, mode=mode, base_size=base_size, resize=True)
 
 
-        if mode == 'train':
-            self.data_dir = osp.join(base_dir, 'trainval')
-        elif mode == 'test':
-            self.data_dir = osp.join(base_dir, 'test')
-        else:
-            raise NotImplementedError
-        self.base_size = base_size
-
-        self.names = []
-        for filename in os.listdir(osp.join(self.data_dir, 'images')):
-            if filename.endswith('png'):
-                self.names.append(filename)
-
-        # self.tranform = augumentation()
-
-        # self.transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),  # Default mean and std
-        # ])
-
-    def __getitem__(self, i):
-        name = self.names[i]
-        img_path = osp.join(self.data_dir, 'images', name)
-        label_path = osp.join(self.data_dir, 'masks', name)
-
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
-        # img, mask = self.tranform(img, mask)
-        img = cv2.resize(img, [self.base_size, self.base_size], interpolation=cv2.INTER_LINEAR)
-        mask = cv2.resize(mask, [self.base_size, self.base_size], interpolation=cv2.INTER_NEAREST)
-        img = img.reshape(1, self.base_size, self.base_size) / 255.
-        if np.max(mask) > 0:
-            mask = mask.reshape(1, self.base_size, self.base_size) / np.max(mask)
-        else:
-            mask = mask.reshape(1, self.base_size, self.base_size)
-
-        img = torch.from_numpy(img).type(torch.FloatTensor)
-        mask = torch.from_numpy(mask).type(torch.FloatTensor)
-
-        return img, mask
-
-    def __len__(self):
-        return len(self.names)
-
-class NUDTDataset(Data.Dataset):
-    '''
-    Return: Single channel
-    '''
-
+class NUDTDataset(PairedFolderDataset):
     def __init__(self, base_dir=r'D:/WFY/datasets/NUDT',
                  mode='train', base_size=256):
-        assert mode in ['train', 'test']
+        super().__init__(base_dir, mode=mode, base_size=base_size, resize=True)
 
-
-        if mode == 'train':
-            self.data_dir = osp.join(base_dir, 'trainval')
-        elif mode == 'test':
-            self.data_dir = osp.join(base_dir, 'test')
-        else:
-            raise NotImplementedError
-        self.base_size = base_size
-
-        self.names = []
-        for filename in os.listdir(osp.join(self.data_dir, 'images')):
-            if filename.endswith('png'):
-                self.names.append(filename)
-        self.mode = mode
-        # self.transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),  # Default mean and std
-        # ])
-
-    def __getitem__(self, i):
-        name = self.names[i]
-        img_path = osp.join(self.data_dir, 'images', name)
-        label_path = osp.join(self.data_dir, 'masks', name)
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
-        img = cv2.resize(img, [self.base_size, self.base_size], interpolation=cv2.INTER_LINEAR)
-        mask = cv2.resize(mask, [self.base_size, self.base_size], interpolation=cv2.INTER_NEAREST)
-        img = img.reshape(1, self.base_size, self.base_size) / 255.
-        if np.max(mask) > 0:
-            mask = mask.reshape(1, self.base_size, self.base_size) / np.max(mask)
-        else:
-            mask = mask.reshape(1, self.base_size, self.base_size)
-
-        img = torch.from_numpy(img).type(torch.FloatTensor)
-        mask = torch.from_numpy(mask).type(torch.FloatTensor)
-
-        return img, mask
-
-    def __len__(self):
-        return len(self.names)
-    
 
 class SirstDataset(Data.Dataset):
     def __init__(self, base_dir=r'datasets/SIRSTv1',
@@ -185,59 +114,23 @@ class SirstDataset(Data.Dataset):
         self.mode = mode
         self.base_size = base_size
         self.tranform = augumentation()
-        # self.transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     # transforms.Normalize([.485, .456, .406], [.229, .224, .225]),  # Default mean and std
-        #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-        # ])
 
     def __getitem__(self, i):
         name = self.names[i]
-        img_path = osp.join(self.imgs_dir, name+'.png')
-        label_path = osp.join(self.label_dir, name+'_pixels0.png')
-
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
-
-        # 添加错误检查，防止文件读取失败
-        if img is None:
-            raise FileNotFoundError(f"Cannot read image: {img_path}")
-        if mask is None:
-            raise FileNotFoundError(f"Cannot read mask: {label_path}")
+        img, mask = read_gray_pair(osp.join(self.imgs_dir, name + '.png'),
+                                   osp.join(self.label_dir, name + '_pixels0.png'))
 
         if self.mode == 'train':
             img, mask = self.tranform(img, mask)
-            img = cv2.resize(img, [self.base_size, self.base_size], interpolation=cv2.INTER_LINEAR)
-            mask = cv2.resize(mask, [self.base_size, self.base_size], interpolation=cv2.INTER_NEAREST)
-            img = img.reshape(1, self.base_size, self.base_size) / 255.
-            if np.max(mask) > 0:
-                mask = mask.reshape(1, self.base_size, self.base_size) / np.max(mask)
-            else:
-                mask = mask.reshape(1, self.base_size, self.base_size)
-            img = torch.from_numpy(img).type(torch.FloatTensor)
-            mask = torch.from_numpy(mask).type(torch.FloatTensor)
-            return img, mask
+            img, mask = resize_pair(img, mask, self.base_size)
+            return to_tensor_pair(img, mask, self.base_size)
 
-        elif self.mode == 'val' or self.mode == 'test':
-            img = cv2.resize(img, [self.base_size, self.base_size], interpolation=cv2.INTER_LINEAR)
-            mask = cv2.resize(mask, [self.base_size, self.base_size], interpolation=cv2.INTER_NEAREST)
-            img = img.reshape(1, self.base_size, self.base_size) / 255.
-            if np.max(mask) > 0:
-                mask = mask.reshape(1, self.base_size, self.base_size) / np.max(mask)
-            else:
-                mask = mask.reshape(1, self.base_size, self.base_size)
-            _, h, w = img.shape
-            # print(img.shape)
-            img = PadImg(img)
-            mask = PadImg(mask)
-            img = torch.from_numpy(img).type(torch.FloatTensor)
-            mask = torch.from_numpy(mask).type(torch.FloatTensor)
-            return img, mask
-        
-        else:
-            raise ValueError(f"Unsupported mode: {self.mode}")
+        img, mask = resize_pair(img, mask, self.base_size)
+        return to_tensor_pair(img, mask, self.base_size, pad=True)
 
     def __len__(self):
         return len(self.names)
+
 
 class augumentation(object):
     def __call__(self, input, target):

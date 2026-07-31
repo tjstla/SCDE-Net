@@ -170,6 +170,22 @@ def backup_model_files(save_folder):
     print(f"✓ 模型文件备份完成! 备份位置: {model_backup_dir}")
 
 
+DATASETS = {
+    'sirstaug': (SirstAugDataset, r'./datasets/sirst_aug'),
+    'irstd1k': (IRSTD1kDataset, r'./datasets/IRSTD-1k'),
+    'nudt': (NUDTDataset, r'./datasets/NUDT-SIRST'),
+    'SIRSTv1': (SirstDataset, r'datasets/SIRSTv1'),
+}
+
+
+def build_datasets(name, base_size):
+    if name not in DATASETS:
+        raise NotImplementedError
+    dataset_cls, base_dir = DATASETS[name]
+    return (dataset_cls(base_dir=base_dir, mode='train', base_size=base_size),
+            dataset_cls(base_dir=base_dir, mode='test', base_size=base_size))
+
+
 class Trainer(object):
     def __init__(self, args):
         self.args = args
@@ -179,22 +195,7 @@ class Trainer(object):
         backup_model_files(args.save_folder)
 
         ## dataset
-        if args.dataset == 'sirstaug':
-            trainset = SirstAugDataset(base_dir=r'./datasets/sirst_aug',
-                                       mode='train', base_size=args.base_size)
-            valset = SirstAugDataset(base_dir=r'./datasets/sirst_aug',
-                                     mode='test', base_size=args.base_size)
-        elif args.dataset == 'irstd1k':
-            trainset = IRSTD1kDataset(base_dir=r'./datasets/IRSTD-1k', mode='train', base_size=args.base_size)
-            valset = IRSTD1kDataset(base_dir=r'./datasets/IRSTD-1k', mode='test', base_size=args.base_size)
-        elif args.dataset == 'nudt':
-            trainset = NUDTDataset(base_dir=r'./datasets/NUDT-SIRST', mode='train', base_size=args.base_size)
-            valset = NUDTDataset(base_dir=r'./datasets/NUDT-SIRST', mode='test', base_size=args.base_size)
-        elif args.dataset == 'SIRSTv1':
-            trainset = SirstDataset(base_dir=r'datasets/SIRSTv1', mode='train', base_size=args.base_size)
-            valset = SirstDataset(base_dir=r'datasets/SIRSTv1', mode='test', base_size=args.base_size)
-        else:
-            raise NotImplementedError
+        trainset, valset = build_datasets(args.dataset, args.base_size)
 
         self.train_data_loader = Data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
         self.val_data_loader = Data.DataLoader(valset, batch_size=args.batch_size, shuffle=True)
@@ -251,6 +252,20 @@ class Trainer(object):
         self.logger.info(args)
         self.logger.info("Using device: {}".format(self.device))
 
+    def compute_losses(self, out_D, out_T, data, labels, epoch, device=None):
+        if self.args.seg_loss == 'sls':
+            loss_seg = self.criterion(out_T, labels, self.args.warm_up_epochs, epoch,
+                                      with_shape=self.args.sls_with_shape)
+        else:
+            loss_seg = self.criterion(out_T, labels)
+
+        loss_mse = self.mse(out_D, data)
+        gamma = torch.Tensor([0.1])
+        if device is not None:
+            gamma = gamma.to(device)
+        loss_all = loss_seg + torch.mul(gamma, loss_mse)
+        return loss_all, loss_seg, loss_mse
+
     def training(self):
         # training step
         start_time = time.time()
@@ -267,15 +282,8 @@ class Trainer(object):
                 labels = labels.to(self.device)
                 out_D, out_T = self.net(data)
 
-                if self.args.seg_loss == 'sls':
-                    loss_seg = self.criterion(out_T, labels, self.args.warm_up_epochs, epoch, with_shape=self.args.sls_with_shape)
-                else:
-                    loss_seg = self.criterion(out_T, labels)
-                
-                loss_mse = self.mse(out_D, data)
-                gamma = torch.Tensor([0.1]).to(self.device)
-                
-                loss_all = loss_seg + torch.mul(gamma, loss_mse)
+                loss_all, loss_seg, loss_mse = self.compute_losses(out_D, out_T, data, labels, epoch,
+                                                                  device=self.device)
 
                 self.optimizer.zero_grad()
                 loss_all.backward() 
@@ -315,14 +323,8 @@ class Trainer(object):
             out_D, out_T = out_D.cpu(), out_T.cpu()
             pred = out_T
 
-
-            if self.args.seg_loss == 'sls':
-                loss_seg = self.criterion(out_T, labels, self.args.warm_up_epochs, epoch, with_shape=self.args.sls_with_shape)
-            else:
-                loss_seg = self.criterion(out_T, labels)
-            loss_mse = self.mse(out_D, data)
-            gamma = torch.Tensor([0.1])  # 保持在CPU上
-            loss_all = loss_seg + torch.mul(gamma, loss_mse)
+            # gamma 保持在 CPU 上
+            loss_all, loss_seg, loss_mse = self.compute_losses(out_D, out_T, data, labels, epoch)
 
             self.metric.update(labels, out_T)
 

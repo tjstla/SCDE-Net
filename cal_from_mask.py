@@ -1,9 +1,5 @@
-import torch
-import torch.nn as nn
 import torch.utils.data as Data
-import torchvision.transforms as transforms
 
-from PIL import Image
 import os
 import os.path as osp
 import scipy.io as scio
@@ -11,9 +7,23 @@ import numpy as np
 
 import cv2
 
+from utils.data import resize_pair
 from utils.evaluation.roc_cruve import ROCMetric
 from utils.evaluation.TPFNFP import SegmentationMetricTPFNFP
 from utils.evaluation.pd_fa import PD_FA
+
+
+MAT_DATASETS = {
+    'NUDT-SIRST': ('./result/NUDT-SIRST/mat1', './datasets/NUDT-SIRST/test/masks'),
+    'IRSTD-1k': ('./result/IRSTD-1k/mat1', './datasets/IRSTD-1k/test/masks'),
+    'SIRST-aug': ('./result/sirst_aug/mat1', './datasets/sirst_aug/test/masks'),
+    'SIRSTv1': ('./result/SIRSTv1/mat1', './datasets/SIRSTv1/SIRST/BinaryMask'),
+}
+
+
+def log_line(f, message):
+    print(message)
+    f.write(message + '\n')
 
 
 class Dataset_mat(Data.Dataset):
@@ -21,28 +31,14 @@ class Dataset_mat(Data.Dataset):
 
         self.base_size = base_size
         self.dataset = dataset
-        if dataset == 'NUDT-SIRST':
-            self.mat_dir = './result/NUDT-SIRST/mat1'
-            self.mask_dir = './datasets/NUDT-SIRST/test/masks'
-        elif dataset == 'IRSTD-1k':
-            self.mat_dir = './result/IRSTD-1k/mat1'
-            self.mask_dir = './datasets/IRSTD-1k/test/masks'
-        elif dataset == 'SIRST-aug':
-            self.mat_dir = './result/sirst_aug/mat1'
-            self.mask_dir = './datasets/sirst_aug/test/masks'
-        elif dataset == 'SIRSTv1':
-            self.mat_dir = './result/SIRSTv1/mat1'
-            self.mask_dir = './datasets/SIRSTv1/SIRST/BinaryMask'
-        else:
+        if dataset not in MAT_DATASETS:
             raise NotImplementedError
+        self.mat_dir, self.mask_dir = MAT_DATASETS[dataset]
 
         file_mat_names = os.listdir(self.mat_dir)
         self.file_names = [s[:-4] for s in file_mat_names]
 
         self.thre = thre
-
-        self.mat_transform = transforms.Resize((base_size, base_size), interpolation=Image.BILINEAR)
-        self.mask_transform = transforms.Resize((base_size, base_size), interpolation=Image.NEAREST)
 
     def __getitem__(self, i):
         name = self.file_names[i]
@@ -63,10 +59,7 @@ class Dataset_mat(Data.Dataset):
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         mask = mask / mask.max()
 
-        rstImg = cv2.resize(rstImg, dsize=(self.base_size, self.base_size), interpolation=cv2.INTER_LINEAR)
-        mask = cv2.resize(mask, dsize=(self.base_size, self.base_size), interpolation=cv2.INTER_NEAREST)
-
-        return rstImg, mask
+        return resize_pair(rstImg, mask, self.base_size)
 
     def __len__(self):
         return len(self.file_names)
@@ -74,8 +67,7 @@ class Dataset_mat(Data.Dataset):
 
 def cal_fpr_tpr(dataname, nbins=200, fileName=None):
     f = open(fileName, mode='a+')
-    print('Running data: {:s}'.format(dataname))
-    f.write('Running data: {:s}'.format(dataname) + '\n')
+    log_line(f, 'Running data: {:s}'.format(dataname))
 
     thre = 0.5
 
@@ -97,18 +89,14 @@ def cal_fpr_tpr(dataname, nbins=200, fileName=None):
     pd, fa = eval_PD_FA.get()
     miou, prec, recall, fscore = eval_mIoU_P_R_F.get()
 
-    print('AUC: %.6f' % (auc))
-    f.write('AUC: %.6f' % (auc) + '\n')
-    print('Pd: %.6f, Fa: %.8f' % (pd, fa))
-    f.write('Pd: %.6f, Fa: %.8f' % (pd, fa) + '\n')
-    print('mIoU: %.6f, Prec: %.6f, Recall: %.6f, fscore: %.6f' % (miou, prec, recall, fscore))
-    f.write('mIoU: %.6f, Prec: %.6f, Recall: %.6f, fscore: %.6f' % (miou, prec, recall, fscore) + '\n')
+    log_line(f, 'AUC: %.6f' % (auc))
+    log_line(f, 'Pd: %.6f, Fa: %.8f' % (pd, fa))
+    log_line(f, 'mIoU: %.6f, Prec: %.6f, Recall: %.6f, fscore: %.6f' % (miou, prec, recall, fscore))
     f.write('\n')
 
     save_dict = {'tpr': tpr, 'fpr': fpr, 'Our Pd': pd, 'Our Fa': fa}
     matDir = './eval/IndicatorResult/matResult/'
-    if not os.path.exists(matDir):
-        os.makedirs(matDir)
+    os.makedirs(matDir, exist_ok=True)
     matFile = osp.join(matDir, '{:s}.mat'.format(dataname))
     scio.savemat(matFile, save_dict)
 
@@ -121,8 +109,7 @@ if __name__ == '__main__':
 
     for data in data_list:
         fileName = fileDir + f'{data}_mat_result.txt'
-        if not os.path.exists(fileDir):
-            os.makedirs(fileDir)
+        os.makedirs(fileDir, exist_ok=True)
 
         with open(fileName, mode='w+') as f:
             pass
