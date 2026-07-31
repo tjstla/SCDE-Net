@@ -34,9 +34,19 @@ class Dataset_mat(Data.Dataset):
             self.mat_dir = './result/SIRSTv1/mat1'
             self.mask_dir = './datasets/SIRSTv1/SIRST/BinaryMask'
         else:
-            raise NotImplementedError
+            raise NotImplementedError(
+                f"Unsupported dataset: {dataset}. Use one of "
+                "'NUDT-SIRST', 'IRSTD-1k', 'SIRST-aug', 'SIRSTv1'."
+            )
 
-        file_mat_names = os.listdir(self.mat_dir)
+        if not osp.isdir(self.mat_dir):
+            raise FileNotFoundError(f"Prediction directory does not exist: {self.mat_dir}")
+        if not osp.isdir(self.mask_dir):
+            raise FileNotFoundError(f"Mask directory does not exist: {self.mask_dir}")
+
+        file_mat_names = [s for s in os.listdir(self.mat_dir) if s.endswith('.mat')]
+        if not file_mat_names:
+            raise FileNotFoundError(f"No .mat predictions found in: {self.mat_dir}")
         self.file_names = [s[:-4] for s in file_mat_names]
 
         self.thre = thre
@@ -52,16 +62,25 @@ class Dataset_mat(Data.Dataset):
             mask_path = osp.join(self.mask_dir, name) + ".png"
         mat_path = osp.join(self.mat_dir, name) + ".mat"
 
-        rstImg = scio.loadmat(mat_path)['T']
-        rstImg = np.asarray(rstImg)
+        mat = scio.loadmat(mat_path)
+        if 'T' not in mat:
+            raise KeyError(f"Key 'T' missing in prediction file: {mat_path}")
+        rstImg = np.asarray(mat['T'])
 
         rst_seg = np.zeros(rstImg.shape)
         rst_seg[rstImg > self.thre] = 1
 
+        if not osp.exists(mask_path):
+            raise FileNotFoundError(f"Mask does not exist: {mask_path}")
         mask = cv2.imdecode(np.fromfile(mask_path, dtype=np.uint8), -1)
+        if mask is None:
+            raise OSError(f"Failed to decode mask: {mask_path}")
         if mask.ndim == 3:
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        mask = mask / mask.max()
+        mask_max = mask.max()
+        if mask_max == 0:
+            raise ValueError(f"Mask contains no foreground pixels: {mask_path}")
+        mask = mask / mask_max
 
         rstImg = cv2.resize(rstImg, dsize=(self.base_size, self.base_size), interpolation=cv2.INTER_LINEAR)
         mask = cv2.resize(mask, dsize=(self.base_size, self.base_size), interpolation=cv2.INTER_NEAREST)
@@ -73,9 +92,7 @@ class Dataset_mat(Data.Dataset):
 
 
 def cal_fpr_tpr(dataname, nbins=200, fileName=None):
-    f = open(fileName, mode='a+')
     print('Running data: {:s}'.format(dataname))
-    f.write('Running data: {:s}'.format(dataname) + '\n')
 
     thre = 0.5
 
@@ -86,8 +103,8 @@ def cal_fpr_tpr(dataname, nbins=200, fileName=None):
     eval_PD_FA = PD_FA()
     eval_mIoU_P_R_F = SegmentationMetricTPFNFP(nclass=1)
 
-    for i in range(dataset.__len__()):
-        rstImg, mask = dataset.__getitem__(i)
+    for i in range(len(dataset)):
+        rstImg, mask = dataset[i]
         size = rstImg.shape
         roc.update(pred=rstImg, label=mask)
         eval_PD_FA.update(rstImg, mask, size)
@@ -97,13 +114,17 @@ def cal_fpr_tpr(dataname, nbins=200, fileName=None):
     pd, fa = eval_PD_FA.get()
     miou, prec, recall, fscore = eval_mIoU_P_R_F.get()
 
-    print('AUC: %.6f' % (auc))
-    f.write('AUC: %.6f' % (auc) + '\n')
-    print('Pd: %.6f, Fa: %.8f' % (pd, fa))
-    f.write('Pd: %.6f, Fa: %.8f' % (pd, fa) + '\n')
-    print('mIoU: %.6f, Prec: %.6f, Recall: %.6f, fscore: %.6f' % (miou, prec, recall, fscore))
-    f.write('mIoU: %.6f, Prec: %.6f, Recall: %.6f, fscore: %.6f' % (miou, prec, recall, fscore) + '\n')
-    f.write('\n')
+    summary = [
+        'Running data: {:s}'.format(dataname),
+        'AUC: %.6f' % (auc),
+        'Pd: %.6f, Fa: %.8f' % (pd, fa),
+        'mIoU: %.6f, Prec: %.6f, Recall: %.6f, fscore: %.6f' % (miou, prec, recall, fscore),
+        '',
+    ]
+    for line in summary[1:-1]:
+        print(line)
+    with open(fileName, mode='a+') as f:
+        f.write('\n'.join(summary) + '\n')
 
     save_dict = {'tpr': tpr, 'fpr': fpr, 'Our Pd': pd, 'Our Fa': fa}
     matDir = './eval/IndicatorResult/matResult/'

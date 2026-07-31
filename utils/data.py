@@ -14,27 +14,46 @@ import numpy as np
 
 __all__ = ['SirstAugDataset', 'IRSTD1kDataset', 'NUDTDataset', 'SirstDataset']
 
+
+def read_gray_image(path, kind='image'):
+    """Read a grayscale image, raising instead of returning None on failure."""
+    if not osp.exists(path):
+        raise FileNotFoundError(f"{kind} does not exist: {path}")
+    data = cv2.imread(path, 0)
+    if data is None:
+        raise OSError(f"Failed to decode {kind}: {path}")
+    return data
+
+
+def list_png_names(directory):
+    """List png files in a directory, raising when it is missing or empty."""
+    if not osp.isdir(directory):
+        raise FileNotFoundError(f"Dataset directory does not exist: {directory}")
+    names = sorted(name for name in os.listdir(directory) if name.endswith('png'))
+    if not names:
+        raise FileNotFoundError(f"No png files found in: {directory}")
+    return names
+
+
+def resolve_split_dir(base_dir, mode, train_name='trainval', test_name='test'):
+    if mode == 'train':
+        return osp.join(base_dir, train_name)
+    if mode in ('val', 'test'):
+        return osp.join(base_dir, test_name)
+    raise ValueError(f"Unsupported mode: {mode}. Use 'train' or 'test'.")
+
 class SirstAugDataset(Data.Dataset):
     '''
     Return: Single channel
     '''
     def __init__(self, base_dir=r'/Users/tianfangzhang/Program/DATASETS/sirst_aug',
                  mode='train', base_size=256):
-        assert mode in ['train', 'test']
         self.mode = mode
-        if mode == 'train':
-            self.data_dir = osp.join(base_dir, 'trainval')
-        elif mode == 'test':
-            self.data_dir = osp.join(base_dir, 'test')
-        else:
-            raise NotImplementedError
+        self.data_dir = resolve_split_dir(base_dir, mode)
 
         self.base_size = base_size
 
-        self.names = []
-        for filename in os.listdir(osp.join(self.data_dir, 'images')):
-            if filename.endswith('png'):
-                self.names.append(filename)
+        self.names = list_png_names(osp.join(self.data_dir, 'images'))
         self.tranform = augumentation()
         # self.transform = transforms.Compose([
         #     transforms.ToTensor(),
@@ -46,7 +65,8 @@ class SirstAugDataset(Data.Dataset):
         img_path = osp.join(self.data_dir, 'images', name)
         label_path = osp.join(self.data_dir, 'masks', name)
 
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
+        img = read_gray_image(img_path, 'image')
+        mask = read_gray_image(label_path, 'mask')
         if self.mode == 'train':
             img, mask = self.tranform(img, mask)
         img = img.reshape(1, self.base_size, self.base_size) / 255.
@@ -68,21 +88,11 @@ class IRSTD1kDataset(Data.Dataset):
 
     def __init__(self, base_dir=r'D:/WFY/datasets/IRSTD-1k',
                  mode='train', base_size=256):
-        assert mode in ['train', 'test']
-
-
-        if mode == 'train':
-            self.data_dir = osp.join(base_dir, 'trainval')
-        elif mode == 'test':
-            self.data_dir = osp.join(base_dir, 'test')
-        else:
-            raise NotImplementedError
+        self.mode = mode
+        self.data_dir = resolve_split_dir(base_dir, mode)
         self.base_size = base_size
 
-        self.names = []
-        for filename in os.listdir(osp.join(self.data_dir, 'images')):
-            if filename.endswith('png'):
-                self.names.append(filename)
+        self.names = list_png_names(osp.join(self.data_dir, 'images'))
 
         # self.tranform = augumentation()
 
@@ -96,7 +106,8 @@ class IRSTD1kDataset(Data.Dataset):
         img_path = osp.join(self.data_dir, 'images', name)
         label_path = osp.join(self.data_dir, 'masks', name)
 
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
+        img = read_gray_image(img_path, 'image')
+        mask = read_gray_image(label_path, 'mask')
         # img, mask = self.tranform(img, mask)
         img = cv2.resize(img, [self.base_size, self.base_size], interpolation=cv2.INTER_LINEAR)
         mask = cv2.resize(mask, [self.base_size, self.base_size], interpolation=cv2.INTER_NEAREST)
@@ -121,22 +132,11 @@ class NUDTDataset(Data.Dataset):
 
     def __init__(self, base_dir=r'D:/WFY/datasets/NUDT',
                  mode='train', base_size=256):
-        assert mode in ['train', 'test']
-
-
-        if mode == 'train':
-            self.data_dir = osp.join(base_dir, 'trainval')
-        elif mode == 'test':
-            self.data_dir = osp.join(base_dir, 'test')
-        else:
-            raise NotImplementedError
+        self.mode = mode
+        self.data_dir = resolve_split_dir(base_dir, mode)
         self.base_size = base_size
 
-        self.names = []
-        for filename in os.listdir(osp.join(self.data_dir, 'images')):
-            if filename.endswith('png'):
-                self.names.append(filename)
-        self.mode = mode
+        self.names = list_png_names(osp.join(self.data_dir, 'images'))
         # self.transform = transforms.Compose([
         #     transforms.ToTensor(),
         #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),  # Default mean and std
@@ -146,7 +146,8 @@ class NUDTDataset(Data.Dataset):
         name = self.names[i]
         img_path = osp.join(self.data_dir, 'images', name)
         label_path = osp.join(self.data_dir, 'masks', name)
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
+        img = read_gray_image(img_path, 'image')
+        mask = read_gray_image(label_path, 'mask')
         img = cv2.resize(img, [self.base_size, self.base_size], interpolation=cv2.INTER_LINEAR)
         mask = cv2.resize(mask, [self.base_size, self.base_size], interpolation=cv2.INTER_NEAREST)
         img = img.reshape(1, self.base_size, self.base_size) / 255.
@@ -178,9 +179,12 @@ class SirstDataset(Data.Dataset):
         self.imgs_dir = osp.join(base_dir, 'PNGImages')
         self.label_dir = osp.join(base_dir, 'SIRST/BinaryMask')
 
-        self.names = []
+        if not osp.exists(self.list_dir):
+            raise FileNotFoundError(f"Split file does not exist: {self.list_dir}")
         with open(self.list_dir, 'r') as f:
-            self.names += [line.strip() for line in f.readlines()]
+            self.names = [line.strip() for line in f if line.strip()]
+        if not self.names:
+            raise ValueError(f"Split file is empty: {self.list_dir}")
 
         self.mode = mode
         self.base_size = base_size
@@ -196,13 +200,8 @@ class SirstDataset(Data.Dataset):
         img_path = osp.join(self.imgs_dir, name+'.png')
         label_path = osp.join(self.label_dir, name+'_pixels0.png')
 
-        img, mask = cv2.imread(img_path, 0), cv2.imread(label_path, 0)
-
-        # 添加错误检查，防止文件读取失败
-        if img is None:
-            raise FileNotFoundError(f"Cannot read image: {img_path}")
-        if mask is None:
-            raise FileNotFoundError(f"Cannot read mask: {label_path}")
+        img = read_gray_image(img_path, 'image')
+        mask = read_gray_image(label_path, 'mask')
 
         if self.mode == 'train':
             img, mask = self.tranform(img, mask)

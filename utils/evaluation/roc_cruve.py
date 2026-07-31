@@ -10,7 +10,10 @@ class ROCMetric(object):
         self.reset()
 
     def update(self, pred, label):
-        pred = pred / np.max(pred) # normalize output to 0-1
+        max_pred = np.max(pred)
+        if max_pred <= 0:
+            raise ValueError("Cannot normalize prediction: all values are non-positive")
+        pred = pred / max_pred # normalize output to 0-1
         label = label.astype(np.uint8)
 
         # analysis target number
@@ -31,7 +34,11 @@ class ROCMetric(object):
 
             # update false detection
             tmp_false_detect = np.sum(np.logical_and(back_mask, pred_binary))
-            assert tmp_false_detect <= tmp_back_area
+            if tmp_false_detect > tmp_back_area:
+                raise ValueError(
+                    f"False detections ({tmp_false_detect}) exceed background area ({tmp_back_area}); "
+                    "prediction and label shapes are probably mismatched."
+                )
             self.false_detect[ibin] += tmp_false_detect
 
             # update true detection, there maybe multiple targets
@@ -40,6 +47,10 @@ class ROCMetric(object):
                 self.true_detect[ibin] += np.sum(np.logical_and(target_mask, pred_binary)) > 0
 
     def get(self):
+        if self.background_area == 0 or self.target_nums == 0:
+            raise RuntimeError(
+                "No labelled targets were accumulated; call update() with non-empty labels before get()"
+            )
         fpr = self.false_detect / self.background_area  # X axis
         tpr = self.true_detect / self.target_nums       # Y axis
         return fpr, tpr, auc(fpr, tpr)

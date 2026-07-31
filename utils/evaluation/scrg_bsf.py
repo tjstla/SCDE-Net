@@ -12,7 +12,8 @@ class BSF_SCRG(object):
 
         # analysis target number
         num_labels, labels, _, centroids = cv2.connectedComponentsWithStats(label.astype(np.uint8))
-        assert num_labels > 1
+        if num_labels <= 1:
+            raise ValueError("Label contains no target region; cannot compute SCRG/BSF")
 
         # pick up background region
         mask_back = label == 0
@@ -32,7 +33,8 @@ class BSF_SCRG(object):
 
             if self.use_centroid:
                 # use centroid pixel value to replace mean of target region
-                assert mask_target[centroid] == i
+                if mask_target[centroid] != i:
+                    raise ValueError(f"Centroid {centroid} does not fall inside target region {i}")
                 mean_target_in = in_img[centroid[0], centroid[1]]
                 mean_target_out = pred[centroid[0], centroid[1]]
             else:
@@ -46,6 +48,10 @@ class BSF_SCRG(object):
             self.cout = np.append(self.cout, np.std(patch_back_out))
 
     def get(self):
+        if self.sin.size == 0:
+            raise RuntimeError("No targets were accumulated; call update() before get()")
+        if np.any(self.cout == 0) or np.any(self.cin == 0) or np.any(self.sin == 0):
+            raise ValueError("Zero background contrast recorded; SCRG/BSF are undefined")
         scrgs = (self.sout / self.cout) / (self.sin / self.cin)
         bsfs = self.cin / self.cout
         return np.mean(scrgs), np.mean(bsfs)

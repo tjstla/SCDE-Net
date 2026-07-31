@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 gpu = '--gpu 0' 
 
@@ -9,4 +12,8 @@ data_nudt = ' --dataset nudt '
 SirstDataset = ' --dataset SIRSTv1 '
 
 for i in range(1):
-    os.system('python train.py --net-name scdenet --batch-size 8 --base-dir train_logs' + train_cfg + data_irstd1k + gpu)
+    command = ('python train.py --net-name scdenet --batch-size 8 --base-dir train_logs'
+               + train_cfg + data_irstd1k + gpu)
+    result = subprocess.run(command, shell=True)
+    if result.returncode != 0:
+        sys.exit(f"Training run {i} failed with exit code {result.returncode}: {command}")

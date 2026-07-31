@@ -31,6 +31,7 @@ class SegmentationMetricTPFNFP(object):
                 self.total_tp += tp
                 self.total_fp += fp
                 self.total_fn += fn
+                self.num_updates += 1
             return
 
         if isinstance(preds, torch.Tensor):
@@ -48,22 +49,34 @@ class SegmentationMetricTPFNFP(object):
                 thread.join()
         #elif preds.dtype == numpy.uint8:
         elif isinstance(preds, np.ndarray):
-            preds = ((preds / np.max(preds)) > 0.5).astype('int64')  # P
-            labels = (labels / np.max(labels)).astype('int64')  # T
+            pred_max = np.max(preds)
+            label_max = np.max(labels)
+            if pred_max <= 0:
+                raise ValueError("Cannot normalize predictions: all values are non-positive")
+            if label_max <= 0:
+                raise ValueError("Cannot normalize labels: the label contains no foreground pixels")
+            preds = ((preds / pred_max) > 0.5).astype('int64')  # P
+            labels = (labels / label_max).astype('int64')  # T
             evaluate_worker(self, labels, preds)
         else:
-            raise NotImplemented
+            raise TypeError(
+                f"Unsupported prediction type: {type(preds)}. "
+                "Expected torch.Tensor, numpy.ndarray, list or tuple."
+            )
 
     def get_all(self):
         return self.total_tp, self.total_fp, self.total_fn
 
     def get(self):
+        if self.num_updates == 0:
+            raise RuntimeError("No samples were accumulated; call update() before get()")
         return get_miou_prec_recall_fscore(self.total_tp, self.total_fp, self.total_fn)
 
     def reset(self):
         self.total_tp = 0
         self.total_fp = 0
         self.total_fn = 0
+        self.num_updates = 0
         return
 
 def batch_tp_fp_fn(predict, target, nclass):
@@ -93,6 +106,10 @@ def batch_tp_fp_fn(predict, target, nclass):
     area_fn = area_lab[0] - area_inter[0]
 
     # area_union = area_pred + area_lab - area_inter
-    assert area_tp <= (area_tp + area_fn + area_fp)
+    if area_fn < 0 or area_fp < 0:
+        raise ValueError(
+            f"Inconsistent confusion counts (tp={area_tp}, fp={area_fp}, fn={area_fn}); "
+            "predictions and labels are probably not binary maps of the same shape."
+        )
     return area_tp, area_fp, area_fn
 

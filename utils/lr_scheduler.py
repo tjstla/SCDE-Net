@@ -34,8 +34,8 @@ class LR_Scheduler(object):
         self.quiet = quiet
         if not quiet:
             print('Using {} LR scheduler with warm-up epochs of {}!'.format(self.mode, warmup_epochs))
-        if mode == 'step':
-            assert lr_step
+        if mode == 'step' and not lr_step:
+            raise ValueError("lr_step must be a positive integer for the 'step' scheduler")
         self.base_lr = base_lr
         self.lr_step = lr_step
         self.iters_per_epoch = iters_per_epoch
@@ -64,16 +64,25 @@ class LR_Scheduler(object):
             elif epoch <= 50:
                 lr = self.base_lr * (0.2 ** 2)
             else:
-                raise NotImplemented
+                raise NotImplementedError(
+                    f"'design' scheduler is only defined up to epoch 50, got epoch {epoch}"
+                )
 
         else:
-            raise NotImplemented
+            raise NotImplementedError(
+                f"Unsupported lr scheduler mode: {self.mode}. "
+                "Use one of 'cos', 'poly', 'step', 'design'."
+            )
         # if epoch > self.epoch and (epoch == 0 or best_pred > 0.0):
         #     if not self.quiet:
         #         print('\n=>Epoch %i, learning rate = %.4f, \
         #             previous best = %.4f' % (epoch, lr, best_pred))
         #     self.epoch = epoch
-        assert lr >= 0
+        if lr < 0:
+            raise ValueError(
+                f"Computed a negative learning rate ({lr}) at epoch {epoch}, iteration {i}; "
+                "check that num_epochs matches the number of epochs actually run."
+            )
         self._adjust_learning_rate(optimizer, lr)
 
     def _adjust_learning_rate(self, optimizer, lr):

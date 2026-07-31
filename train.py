@@ -121,12 +121,17 @@ def backup_model_files(save_folder):
             shutil.copy2(file_path, dest_path)
             print(f"✓ 已备份: {file_path} -> {dest_path}")
         else:
-            print(f"⚠ 文件不存在，跳过备份: {file_path}")
+            print(f"⚠ 文件不存在，跳过备份: {file_path}", file=sys.stderr)
     
     # 创建备份信息文件
     backup_info_path = osp.join(model_backup_dir, 'backup_info.txt')
     
     def get_real_run_cmd():
+        """Best-effort lookup of the shell command that started training.
+
+        Falls back to the current interpreter invocation when /proc is not
+        available (non-Linux) or unreadable.
+        """
         try:
             pid = os.getpid()
             cmd_list = []
@@ -146,8 +151,8 @@ def backup_model_files(save_folder):
             valid_cmds = [c for c in cmd_list if 'sh -c' not in c and '/bin/sh' not in c]
             if valid_cmds:
                 return valid_cmds[-1]
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            print(f"⚠ 无法读取进程命令行，使用回退命令: {exc}", file=sys.stderr)
         return f"{sys.executable} {' '.join(sys.argv)}"
 
     with open(backup_info_path, 'w', encoding='utf-8') as f:
@@ -194,7 +199,15 @@ class Trainer(object):
             trainset = SirstDataset(base_dir=r'datasets/SIRSTv1', mode='train', base_size=args.base_size)
             valset = SirstDataset(base_dir=r'datasets/SIRSTv1', mode='test', base_size=args.base_size)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(
+                f"Unsupported dataset: {args.dataset}. "
+                "Use one of 'sirstaug', 'irstd1k', 'nudt', 'SIRSTv1'."
+            )
+
+        if len(trainset) == 0:
+            raise ValueError(f"Training split for dataset '{args.dataset}' is empty.")
+        if len(valset) == 0:
+            raise ValueError(f"Validation split for dataset '{args.dataset}' is empty.")
 
         self.train_data_loader = Data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
         self.val_data_loader = Data.DataLoader(valset, batch_size=args.batch_size, shuffle=True)

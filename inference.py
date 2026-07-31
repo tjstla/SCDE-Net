@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 
 import cv2
@@ -43,7 +44,12 @@ def parse_args():
 
 
 def normalize_dataset(name):
-    return DATASET_ALIASES[name]
+    try:
+        return DATASET_ALIASES[name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown dataset '{name}'. Supported: {', '.join(sorted(DATASET_ALIASES))}"
+        ) from None
 
 
 def resolve_file_list(data_root, dataset):
@@ -51,20 +57,32 @@ def resolve_file_list(data_root, dataset):
     if dataset == "SIRSTv1":
         split_path = data_root / "SIRSTv1" / "Splits" / "test_v1.txt"
         image_root = data_root / "SIRSTv1" / "PNGImages"
+        if not split_path.is_file():
+            raise FileNotFoundError(f"Split file does not exist: {split_path}")
         with split_path.open("r", encoding="utf-8") as f:
             file_list = [line.strip() + ".png" for line in f if line.strip()]
-        return image_root, file_list
+    else:
+        image_root = data_root / dataset / "test" / "images"
+        if not image_root.is_dir():
+            raise FileNotFoundError(f"Image directory does not exist: {image_root}")
+        file_list = sorted([p.name for p in image_root.iterdir() if p.is_file()])
 
-    image_root = data_root / dataset / "test" / "images"
-    file_list = sorted([p.name for p in image_root.iterdir() if p.is_file()])
+    if not file_list:
+        raise FileNotFoundError(f"No test images found for dataset '{dataset}' under {image_root}")
     return image_root, file_list
 
 
 def load_checkpoint(model, checkpoint, device):
-    state = torch.load(checkpoint, map_location=device)
+    checkpoint = Path(checkpoint)
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint}")
+    state = torch.load(str(checkpoint), map_location=device)
     if isinstance(state, dict) and "state_dict" in state:
         state = state["state_dict"]
-    model.load_state_dict(state)
+    try:
+        model.load_state_dict(state)
+    except RuntimeError as exc:
+        raise RuntimeError(f"Checkpoint {checkpoint} does not match the SCDE-Net architecture: {exc}") from exc
     return model
 
 
@@ -85,11 +103,13 @@ def main():
     image_out_dir.mkdir(parents=True, exist_ok=True)
     mat_out_dir.mkdir(parents=True, exist_ok=True)
 
+    failed = []
     for idx, filename in enumerate(file_list, start=1):
         image_path = image_root / filename
         image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
         if image is None:
-            print(f"Skip unreadable image: {image_path}")
+            print(f"Skip unreadable image: {image_path}", file=sys.stderr)
+            failed.append(filename)
             continue
 
         image = cv2.resize(image, (args.size, args.size), interpolation=cv2.INTER_LINEAR)
@@ -101,11 +121,18 @@ def main():
             target[target < 0] = 0
 
         stem = Path(filename).stem
-        cv2.imwrite(str(image_out_dir / filename), target * 255)
+        mask_path = image_out_dir / filename
+        if not cv2.imwrite(str(mask_path), target * 255):
+            raise OSError(f"Failed to write predicted mask: {mask_path}")
         scio.savemat(str(mat_out_dir / f"{stem}.mat"), {"T": target})
         print(f"[{idx:04d}/{len(file_list):04d}] {filename}")
 
     print(f"Results saved to: {Path(args.out_dir) / dataset}")
+
+    if failed:
+        raise OSError(
+            f"{len(failed)}/{len(file_list)} images could not be read, e.g. {failed[:5]}"
+        )
 
 
 if __name__ == "__main__":
